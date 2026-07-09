@@ -1,7 +1,19 @@
 {
-  "updatedAt": "未取得",
-  "source": "GitHub Actionsで9bitから自動取得します",
-  "daily": {"period":"未取得","area":"未取得","quests":["GitHub Actions実行後に自動表示されます"]},
-  "candles": {"period":"未取得","area":"未取得","count":"-","places":["GitHub Actions実行後に自動表示されます"]},
-  "shards": {"date":"未取得","type":"未取得","area":"未取得","times":["GitHub Actions実行後に自動表示されます"],"places":["GitHub Actions実行後に自動表示されます"]}
+  "updatedAt": "2026-07-10T03:33:26.590820+09:00",
+  "ok": false,
+  "errors": [
+    "daily: <urlopen error [Errno -3] Temporary failure in name resolution>",
+    "candle: <urlopen error [Errno -3] Temporary failure in name resolution>",
+    "shard: <urlopen error [Errno -3] Temporary failure in name resolution>"
+  ],
+  "daily": {},
+  "candle": {},
+  "shard": {},
+  "timers": {
+    "bakery": {
+      "label": "パン焼き",
+      "next": "2026-07-10T03:45:00+09:00",
+      "memo": "毎時 00 / 15 / 30 / 45 分目安。ゲーム内とズレる場合はアプリの手動補正を使用してください。"
+    }
+  }
 }
