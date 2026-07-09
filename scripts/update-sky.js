@@ -1,105 +1,155 @@
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
+import path from 'node:path';
+import * as cheerio from 'cheerio';
 
 const SOURCES = {
-  daily: 'https://9-bit.jp/skygold/6593',
+  daily: 'https://9-bit.jp/skygold/6593/',
   candles: 'https://9-bit.jp/skygold/4920/',
   shards: 'https://9-bit.jp/skygold/23767/'
 };
 
-function clean(s='') {
-  return s.replace(/<script[\s\S]*?<\/script>/gi,' ')
-    .replace(/<style[\s\S]*?<\/style>/gi,' ')
-    .replace(/<[^>]+>/g,' ')
-    .replace(/&nbsp;/g,' ')
-    .replace(/&amp;/g,'&')
-    .replace(/&#8211;|&ndash;/g,'-')
-    .replace(/\s+/g,' ')
-    .trim();
+function jstNow() {
+  const d = new Date();
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).formatToParts(d).reduce((a, p) => (a[p.type] = p.value, a), {});
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
-function pick(text, start, end) {
-  const a = text.indexOf(start);
-  if (a < 0) return '';
-  const b = text.indexOf(end, a + start.length);
-  return text.slice(a, b > a ? b : a + 1800);
-}
-function linesFrom(block) {
-  return block.split(/(?=▲|\d回目|場所 |種類 |報酬 |開始時間 |終了時間 |主な対象エリア |期間 |エリア |個数 )/)
-    .map(s=>s.trim()).filter(Boolean);
-}
-async function get(url) {
-  const res = await fetch(url, {headers:{'user-agent':'Mozilla/5.0 sky-tools GitHubActions'}});
-  if (!res.ok) throw new Error(`${url} ${res.status}`);
+
+async function fetchHtml(url) {
+  const res = await fetch(url, {
+    headers: {
+      'user-agent': 'Mozilla/5.0 (compatible; SkyToolsBot/1.0; +https://github.com/alismemo/sky-tools)',
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    }
+  });
+  if (!res.ok) throw new Error(`${url} HTTP ${res.status}`);
   return await res.text();
 }
-function parseDaily(html) {
-  const text = clean(html);
-  const block = pick(text, '今日（', '関連情報');
-  const area = (block.match(/主な対象エリア\s+(.+?)\s+デイリークエスト/)||[])[1] || '';
-  const start = (block.match(/開始時間\s+(.+?)\s+終了時間/)||[])[1] || '';
-  const end = (block.match(/終了時間\s+(.+?)\s+主な対象エリア/)||[])[1] || '';
-  const listPart = (block.match(/デイリークエスト一 覧\s+(.+)/)||[])[1] || block;
-  const quests = listPart.split(/(?=\S+に呼びかける|(?=\S+で精霊)|(?=\S+で彷徨う)|(?=\S+に.*会いましょう)|(?=\S+で瞑想)|(?=\S+を捕まえる)|(?=\S+人の)/)
-    .map(s=>s.replace(/^Image:[^　\s]+\s*/,'').trim())
-    .filter(s=>s && !s.includes('関連情報'))
-    .slice(0,4);
-  // fallback: take link-like sentences between list and related
-  let finalQuests = quests;
-  if (finalQuests.length < 4) {
-    const m = block.match(/デイリークエスト一 覧\s+(.+?)\s+関連情報/);
-    if (m) {
-      finalQuests = m[1].replace(/Image:[^\s]+/g,'').split(/\s{2,}|(?<=る)\s+(?=\S)|(?<=す)\s+(?=\S)/).map(x=>x.trim()).filter(Boolean).slice(0,4);
-    }
-  }
-  return { area, start, end, quests: finalQuests };
+
+function clean(s) {
+  return String(s || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\t\r]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/[ 　]+/g, ' ')
+    .trim();
 }
+
+function linesFrom($) {
+  $('script, style, noscript, iframe, form').remove();
+  const txt = clean($('article').text() || $('body').text());
+  return txt.split('\n').map(clean).filter(Boolean);
+}
+
+function between(lines, startRe, endRe) {
+  const start = lines.findIndex(l => startRe.test(l));
+  if (start < 0) return [];
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (endRe.test(lines[i])) { end = i; break; }
+  }
+  return lines.slice(start + 1, end);
+}
+
+function uniq(arr) {
+  return [...new Set(arr.map(clean).filter(Boolean))];
+}
+
+function parseDaily(html) {
+  const $ = cheerio.load(html);
+  const lines = linesFrom($);
+  const dailyBlock = between(lines, /今日.*デイリークエスト/, /今日のデイリークエスト達成方法|デイリークエストとは|関連情報/);
+  const start = dailyBlock.find(l => /開始時間/.test(l))?.replace(/^開始時間\s*/, '') || '';
+  const end = dailyBlock.find(l => /終了時間/.test(l))?.replace(/^終了時間\s*/, '') || '';
+  const area = dailyBlock.find(l => /主な対象エリア/.test(l))?.replace(/^主な対象エリア\s*/, '') || '';
+
+  let quests = [];
+  const qIndex = dailyBlock.findIndex(l => /デイリークエスト一覧/.test(l));
+  if (qIndex >= 0) {
+    quests = dailyBlock.slice(qIndex + 1)
+      .filter(l => !/^関連情報/.test(l))
+      .filter(l => !/^開始時間|^終了時間|^主な対象エリア|^※/.test(l))
+      .filter(l => !/未解放|場合は|クエスト一覧/.test(l))
+      .filter(l => l.length > 1)
+      .slice(0, 4);
+  }
+
+  // HTML構造が変わった場合の保険：リンクテキストから4件拾う
+  if (quests.length < 4) {
+    const fallback = [];
+    $('a').each((_, a) => {
+      const t = clean($(a).text());
+      if (t && !/今日|シーズン|大キャンドル|闇の破片|関連|情報|ホーム|トップ/.test(t)) fallback.push(t);
+    });
+    quests = uniq([...quests, ...fallback]).slice(0, 4);
+  }
+
+  return { start, end, area, quests: uniq(quests).slice(0, 4) };
+}
+
 function parseCandles(html) {
-  const text = clean(html);
-  const block = pick(text, '今日のデイリー大キャンドル（', '関連情報');
-  const period = (block.match(/期間\s+(.+?)\s+エリア/)||[])[1] || '';
-  const area = (block.match(/エリア\s+(.+?)\s+個数/)||[])[1] || '';
-  const count = (block.match(/個数\s+(.+?)\s+大キャンドル/)||[])[1] || '';
-  const placePart = (block.match(/今日のデイリー大キャンドルの場所\s+(.+)/)||[])[1] || '';
-  const locations = [...placePart.matchAll(/▲\s*([^▲]+)/g)].map(m=>m[1].trim()).filter(Boolean).slice(0,6);
+  const $ = cheerio.load(html);
+  const lines = linesFrom($);
+  const block = between(lines, /今日のデイリー大キャンドル/, /関連情報|日替わり大キャンドルとは|Sky 星を紡ぐ子どもたち攻略情報/);
+  const period = block.find(l => /^期間/.test(l))?.replace(/^期間\s*/, '') || '';
+  const area = block.find(l => /^エリア/.test(l))?.replace(/^エリア\s*/, '') || '';
+  const count = block.find(l => /^個数/.test(l))?.replace(/^個数\s*/, '') || '';
+  const locations = uniq(block
+    .filter(l => /^▲/.test(l))
+    .map(l => l.replace(/^▲\s*/, ''))
+  ).slice(0, 8);
   return { period, area, count, locations };
 }
+
 function parseShards(html) {
-  const text = clean(html);
-  const block = pick(text, '今日の闇の破片（', '関連情報');
-  const period = (block.match(/▼\s*(.+?)\s*▼/)||[])[1] || '';
-  const location = (block.match(/場所\s+(.+?)\s+種類/)||[])[1] || '';
-  const type = (block.match(/種類\s+(.+?)\s+報酬/)||[])[1] || '';
-  const reward = (block.match(/報酬\s+(.+?)\s+今日の/)||[])[1] || '';
-  const times = [...block.matchAll(/\d回目\s+([0-9:～〜]+(?:\s*[0-9:～〜]+)?)/g)].map(m=>m[0].trim()).slice(0,3);
+  const $ = cheerio.load(html);
+  const lines = linesFrom($);
+  const block = between(lines, /今日の『?闇の破片|今日の闇の破片/, /関連情報|闇の破片カレンダー|闇の破片の墜ちる場所/);
+  const period = block.find(l => /▼.*～/.test(l))?.replace(/[▼]/g, '').trim() || '';
+  const location = block.find(l => /^場所/.test(l))?.replace(/^場所\s*/, '') || '';
+  const type = block.find(l => /^種類/.test(l))?.replace(/^種類\s*/, '') || '';
+  const reward = block.find(l => /^報酬/.test(l))?.replace(/^報酬\s*/, '') || '';
+  const times = block
+    .filter(l => /^[123１２３]回目/.test(l))
+    .map(l => l.replace(/^[１２３]/, m => ({'１':'1','２':'2','３':'3'}[m])));
   return { period, location, type, reward, times };
 }
-function breadSchedule() {
-  // Skyのパン焼き/おばあちゃんは2時間ごと（JST）。表示用の固定時刻。
-  return ['01:35','03:35','05:35','07:35','09:35','11:35','13:35','15:35','17:35','19:35','21:35','23:35'];
+
+function makeTimers() {
+  return {
+    bread: ['01:35','03:35','05:35','07:35','09:35','11:35','13:35','15:35','17:35','19:35','21:35','23:35'],
+    geyser: ['00:05','02:05','04:05','06:05','08:05','10:05','12:05','14:05','16:05','18:05','20:05','22:05'],
+    turtle: ['00:50','02:50','04:50','06:50','08:50','10:50','12:50','14:50','16:50','18:50','20:50','22:50']
+  };
 }
+
 async function main() {
-  const [dailyHtml, candlesHtml, shardsHtml] = await Promise.all([
-    get(SOURCES.daily), get(SOURCES.candles), get(SOURCES.shards)
+  const [dailyHtml, candleHtml, shardHtml] = await Promise.all([
+    fetchHtml(SOURCES.daily), fetchHtml(SOURCES.candles), fetchHtml(SOURCES.shards)
   ]);
-  const now = new Date();
+
   const data = {
     source: SOURCES,
-    updatedAt: now.toISOString(),
-    updatedAtJst: now.toLocaleString('ja-JP', {timeZone:'Asia/Tokyo'}),
+    updatedAt: new Date().toISOString(),
+    updatedAtJst: jstNow(),
     status: 'ok',
     daily: parseDaily(dailyHtml),
-    bigCandles: parseCandles(candlesHtml),
-    shards: parseShards(shardsHtml),
-    timers: { bread: breadSchedule() },
-    notes: ['9bitからGitHub Actionsで取得しました']
+    bigCandles: parseCandles(candleHtml),
+    shards: parseShards(shardHtml),
+    timers: makeTimers(),
+    notes: ['9bitからGitHub Actionsで自動取得しました']
   };
-  await fs.mkdir('data', {recursive:true});
-  await fs.writeFile('data/sky.json', JSON.stringify(data, null, 2), 'utf8');
-  await fs.writeFile('data/latest.txt', `updated ${data.updatedAtJst}\n`, 'utf8');
+
+  const outDir = path.join(process.cwd(), 'data');
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, 'sky.json'), JSON.stringify(data, null, 2), 'utf8');
+  fs.writeFileSync(path.join(outDir, 'latest.txt'), `updated ${data.updatedAtJst}\n`, 'utf8');
   console.log(JSON.stringify(data, null, 2));
 }
-main().catch(async (err)=>{
+
+main().catch(err => {
   console.error(err);
-  await fs.mkdir('data', {recursive:true});
-  await fs.writeFile('data/sky.json', JSON.stringify({status:'error', error:String(err), updatedAt:new Date().toISOString()}, null, 2));
   process.exit(1);
 });

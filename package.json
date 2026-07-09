@@ -1,7 +1,12 @@
 {
   "name": "sky-tools",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": {"update": "node scripts/update-sky.js"}
+  "scripts": {
+    "update": "node scripts/update-sky.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
 }
