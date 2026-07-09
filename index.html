@@ -1,1 +1,40 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sky便利ツール</title><link rel="stylesheet" href="css/style.css"></head><body><main class="app"><h1>Sky便利ツール</h1><p id="updated">読込中...</p><section class="grid"><div class="card"><h2>🌟 デイリー</h2><p id="dailyArea"></p><ul id="daily"></ul></div><div class="card"><h2>🕯️ 大キャンドル</h2><p id="candleArea"></p><ul id="candles"></ul></div><div class="card"><h2>🌑 闇のかけら</h2><p id="shardInfo"></p><ul id="shards"></ul></div><div class="card"><h2>🍞 次のパン焼き</h2><div class="timer" id="breadTimer">--:--:--</div></div><div class="card"><h2>🌋 次のゲイザー</h2><div class="timer" id="geyserTimer">--:--:--</div></div><div class="card"><h2>🐢 次のタートル</h2><div class="timer" id="turtleTimer">--:--:--</div></div></section><p class="note">OBS用：<a href="overlay.html">overlay.html</a></p></main><script src="js/app.js"></script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sky便利ツール</title>
+  <style>
+    body{margin:0;font-family:system-ui,'Yu Gothic',sans-serif;background:linear-gradient(180deg,#111827,#1e1b4b);color:#fff;min-height:100vh}
+    header{padding:22px;text-align:center}h1{margin:0;font-size:28px}.wrap{max-width:1100px;margin:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:18px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}.card h2{margin:0 0 10px;font-size:20px}ul{margin:8px 0 0;padding-left:22px}li{margin:7px 0}.muted{opacity:.75;font-size:13px}.status{display:inline-block;padding:5px 10px;border-radius:999px;background:#10b981;color:white;font-size:12px}.bad{background:#ef4444}.timer{font-size:28px;font-weight:800}.small{font-size:14px;opacity:.9}.btn{border:0;border-radius:10px;padding:10px 12px;background:#fff;color:#111827;font-weight:700;cursor:pointer}.footer{text-align:center;padding:18px;opacity:.7}
+  </style>
+</head>
+<body>
+<header><h1>Sky便利ツール</h1><div id="updated" class="muted">読み込み中...</div></header>
+<main class="wrap">
+  <section class="card"><h2>🌟 デイリー</h2><div id="dailyArea" class="small"></div><ul id="daily"></ul></section>
+  <section class="card"><h2>🕯️ 大キャンドル</h2><div id="candleArea" class="small"></div><ul id="candles"></ul></section>
+  <section class="card"><h2>🌑 闇のかけら</h2><div id="shardPlace" class="small"></div><ul id="shards"></ul></section>
+  <section class="card"><h2>🍞 パン焼き</h2><div class="timer" id="breadNext">--:--</div><div class="small" id="breadRemain"></div></section>
+  <section class="card"><h2>🌋 ゲイザー</h2><div class="timer" id="geyserNext">--:--</div><div class="small" id="geyserRemain"></div></section>
+  <section class="card"><h2>🐢 タートル</h2><div class="timer" id="turtleNext">--:--</div><div class="small" id="turtleRemain"></div></section>
+</main>
+<div class="footer">データ参照: 9bit / 自動更新: GitHub Actions</div>
+<script>
+let DATA=null;
+const $=id=>document.getElementById(id);
+function list(id, arr){$(id).innerHTML=(arr||[]).map(x=>`<li>${String(x)}</li>`).join('')||'<li>未取得</li>'}
+async function load(){
+  try{const r=await fetch('./data/sky.json?ts='+Date.now()); DATA=await r.json();
+    $('updated').innerHTML=`<span class="status ${DATA.status==='ok'?'':'bad'}">${DATA.status}</span> 更新: ${DATA.updatedAtJst||'未取得'}`;
+    $('dailyArea').textContent='対象エリア: '+(DATA.daily?.area||'未取得'); list('daily',DATA.daily?.quests);
+    $('candleArea').textContent='エリア: '+(DATA.bigCandles?.area||'未取得')+' '+(DATA.bigCandles?.count||''); list('candles',DATA.bigCandles?.locations);
+    $('shardPlace').textContent=`${DATA.shards?.location||'未取得'} / ${DATA.shards?.type||'未取得'} ${DATA.shards?.reward||''}`; list('shards',DATA.shards?.times);
+  }catch(e){$('updated').textContent='読み込み失敗: '+e.message}
+}
+function nextTime(times){const now=new Date(); let best=null; for(const t of times||[]){const [h,m]=t.split(':').map(Number); const d=new Date(); d.setHours(h,m,0,0); if(d<=now)d.setDate(d.getDate()+1); if(!best||d<best)best=d;} return best;}
+function tickOne(key,label){if(!DATA)return; const n=nextTime(DATA.timers?.[key]); if(!n)return; const diff=n-new Date(); const mm=Math.floor(diff/60000), ss=Math.floor((diff%60000)/1000); $(key+'Next').textContent=n.toTimeString().slice(0,5); $(key+'Remain').textContent=`次の${label}まで ${Math.floor(mm/60)}時間${mm%60}分${String(ss).padStart(2,'0')}秒`;}
+function tick(){tickOne('bread','パン焼き');tickOne('geyser','ゲイザー');tickOne('turtle','タートル')}
+load();setInterval(load,5*60*1000);setInterval(tick,1000);
+</script>
+</body></html>
