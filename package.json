@@ -1,10 +1,13 @@
 {
-  "name": "sky-tools-free-auto",
-  "version": "9.0.0",
+  "name": "sky-tools",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "update": "node scripts/update-sky.js"
+    "update:sky": "node scripts/update-sky.js"
   },
-  "engines": { "node": ">=20" }
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "html-entities": "^2.5.2"
+  }
 }

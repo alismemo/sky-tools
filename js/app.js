@@ -1,28 +1,27 @@
 async function loadSky(){
   const res = await fetch('data/sky.json?ts=' + Date.now());
   const data = await res.json();
-  document.getElementById('updated').textContent = '更新: ' + (data.updatedAtJST || '未更新');
-  document.getElementById('dailyArea').textContent = '対象エリア: ' + (data.daily?.area || '-');
-  fill('dailyList', data.daily?.quests || []);
-  document.getElementById('candleArea').textContent = 'エリア: ' + (data.candles?.area || '-');
-  fill('candleList', data.candles?.locations || []);
-  document.getElementById('shardPlace').textContent = '場所: ' + (data.shards?.place || '-');
-  document.getElementById('shardType').textContent = `種類: ${data.shards?.type || '-'} / 報酬: ${data.shards?.reward || '-'}`;
-  fill('shardTimes', data.shards?.times || []);
+  document.getElementById('updated').textContent = `更新: ${data.updatedAtJst || '未取得'} / 状態: ${data.status || 'unknown'}`;
+  setList('daily', data.daily);
+  setList('candles', data.bigCandles);
+  setList('shards', data.shards);
 }
-function fill(id, items){
-  const el=document.getElementById(id); el.innerHTML='';
-  (items.length?items:['未取得']).forEach(x=>{const li=document.createElement('li');li.textContent=x;el.appendChild(li);});
+function setList(id, arr){
+  const ul = document.getElementById(id); ul.innerHTML='';
+  (arr && arr.length ? arr : ['データなし']).forEach(v=>{ const li=document.createElement('li'); li.textContent=v; ul.appendChild(li); });
 }
-function updateBread(){
+function nextBread(){
   const now = new Date();
-  const next = new Date(now);
-  const m = now.getMinutes();
-  if(m < 30){ next.setMinutes(30,0,0); } else { next.setHours(next.getHours()+1,0,0,0); }
-  const diff = Math.max(0, next-now);
-  const mm = String(Math.floor(diff/60000)).padStart(2,'0');
-  const ss = String(Math.floor(diff/1000)%60).padStart(2,'0');
-  document.getElementById('breadNext').textContent = `次のパン焼き目安まで ${mm}:${ss}`;
+  const minutes = [35, 40, 45];
+  const candidates=[];
+  for(let h=-1; h<4; h++) for(const m of minutes){ const d=new Date(now); d.setHours(now.getHours()+h,m,0,0); if(d>now)candidates.push(d); }
+  candidates.sort((a,b)=>a-b); return candidates[0];
 }
-loadSky().catch(e=>{document.getElementById('updated').textContent='読み込み失敗: '+e.message});
-updateBread(); setInterval(updateBread,1000); setInterval(loadSky,5*60*1000);
+function tick(){
+  const n=nextBread(); const diff=Math.max(0,n-new Date());
+  const mm=String(Math.floor(diff/60000)).padStart(2,'0'); const ss=String(Math.floor(diff/1000)%60).padStart(2,'0');
+  document.getElementById('bread').textContent=`次のパン焼きまで ${mm}:${ss}`;
+}
+loadSky().catch(e=>{document.getElementById('updated').textContent='読み込み失敗: '+e.message;document.getElementById('updated').className='error'});
+setInterval(tick,1000); tick();
+setInterval(loadSky,5*60*1000);

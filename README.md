@@ -1,14 +1,11 @@
-# Sky便利ツール Step1
+# Sky便利ツール Step2
 
-## アップロード方法
-ZIPを解凍して、中身を GitHub リポジトリのルートへ全部上書きアップロードしてください。
+## 追加されたもの
+- GitHub Actionsで9bitを取得
+- `data/sky.json`を自動更新
+- Web/OBSがJSONを表示
 
-特に `.github/workflows/update-sky-data.yml` が必要です。
-
-## 確認
-GitHub の Actions に `Update Sky Data` が表示されます。
-表示されたら開いて `Run workflow` を押してください。
-
-## URL
-- 通常: https://alismemo.github.io/sky-tools/
-- OBS: https://alismemo.github.io/sky-tools/overlay.html
+## 実行方法
+1. このZIPの中身をGitHubに上書きアップロード
+2. Actions → Update Sky Data → Run workflow
+3. 成功したら Code → data/sky.json を確認
