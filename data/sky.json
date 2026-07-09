@@ -1,12 +1,7 @@
 {
   "updatedAt": "未取得",
-  "source": "https://9-bit.jp/skygold/4920/",
-  "daily": ["まだ取得されていません。GitHub Actionsを実行してください。"],
-  "candles": ["未取得"],
-  "shards": ["未取得"],
-  "bread": {
-    "title": "パン焼きタイマー",
-    "schedule": "毎時 00分 / 30分 ごろ開始目安",
-    "note": "ゲーム内イベント状況によりズレる場合があります。"
-  }
+  "source": "GitHub Actionsで9bitから自動取得します",
+  "daily": {"period":"未取得","area":"未取得","quests":["GitHub Actions実行後に自動表示されます"]},
+  "candles": {"period":"未取得","area":"未取得","count":"-","places":["GitHub Actions実行後に自動表示されます"]},
+  "shards": {"date":"未取得","type":"未取得","area":"未取得","times":["GitHub Actions実行後に自動表示されます"],"places":["GitHub Actions実行後に自動表示されます"]}
 }
