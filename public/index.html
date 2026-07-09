@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sky便利ツール 無料自動版</title>
+  <style>
+    :root{--bg:#101426;--card:#1b2240cc;--text:#f5f7ff;--muted:#b8c0e8;--accent:#8ed8ff;--pink:#ffc2e2;--good:#b9fbc0;--warn:#fff3b0}
+    *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(circle at top,#26366b,#101426 55%,#090b14);color:var(--text);min-height:100vh;padding:18px}.wrap{max-width:1100px;margin:auto}.hero{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}.title{font-size:28px;font-weight:800}.sub{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}@media(max-width:850px){.grid{grid-template-columns:1fr}.title{font-size:22px}}.card{background:var(--card);border:1px solid #ffffff22;border-radius:20px;padding:16px;box-shadow:0 10px 35px #0006;backdrop-filter:blur(8px)}.card h2{margin:0 0 10px;font-size:18px}.list{display:flex;flex-direction:column;gap:8px}.item{background:#ffffff10;border:1px solid #ffffff14;border-radius:14px;padding:10px;line-height:1.5}.meta{margin-top:12px;color:var(--muted);font-size:12px}.btns{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:999px;padding:10px 14px;background:#ffffff18;color:var(--text);cursor:pointer}.btn.primary{background:linear-gradient(135deg,var(--accent),var(--pink));color:#16203b;font-weight:800}.timer{font-size:34px;font-weight:900;letter-spacing:.04em}.small{font-size:12px;color:var(--muted)}textarea{width:100%;min-height:90px;border-radius:14px;border:1px solid #ffffff25;background:#050816;color:var(--text);padding:10px}.edit{display:none}.editing .edit{display:block}.editing .view{display:none}a{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div><div class="title">🪽 Sky便利ツール 無料自動版</div><div class="sub">GitHub Actionsで9bitを自動取得 / OBS対応 / Firebase Hosting対応</div></div>
+      <div class="btns"><button class="btn primary" onclick="loadData(true)">更新</button><button class="btn" onclick="toggleEdit()">手動補正</button><a class="btn" href="overlay.html">OBS</a></div>
+    </div>
+    <div class="grid">
+      <section class="card"><h2>✅ デイリー</h2><div id="daily" class="list view"></div><div class="edit"><textarea id="dailyEdit"></textarea></div></section>
+      <section class="card"><h2>🕯️ 大キャンドル</h2><div id="candles" class="list view"></div><div class="edit"><textarea id="candlesEdit"></textarea></div></section>
+      <section class="card"><h2>🌑 闇のかけら</h2><div id="shards" class="list view"></div><div class="edit"><textarea id="shardsEdit"></textarea></div></section>
+      <section class="card"><h2>🍞 パン焼き</h2><div class="timer" id="breadTimer">--:--</div><div id="breadInfo" class="item"></div><div class="small">次の 00分 / 30分 までの目安</div></section>
+    </div>
+    <div class="card" style="margin-top:14px"><div class="btns"><button class="btn primary edit" onclick="saveManual()">手動内容を保存</button><button class="btn edit" onclick="clearManual()">手動補正を解除</button></div><div class="meta" id="meta"></div></div>
+  </div>
+<script>
+const DATA_URL = '../data/sky.json';
+let current = null;
+function lines(v){return Array.isArray(v)?v:String(v||'').split('\n').filter(Boolean)}
+function renderList(id, arr){document.getElementById(id).innerHTML = lines(arr).map(x=>`<div class="item">${escapeHtml(x)}</div>`).join('')}
+function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+async function loadData(force=false){
+  const manual = localStorage.getItem('skyManualData');
+  if(manual && !force){ current = JSON.parse(manual); render(); return; }
+  try{ const res = await fetch(DATA_URL+'?t='+Date.now()); current = await res.json(); localStorage.setItem('skyAutoData', JSON.stringify(current)); }
+  catch(e){ current = JSON.parse(localStorage.getItem('skyAutoData')||manual||'{}'); }
+  render();
+}
+function render(){
+  renderList('daily', current.daily||['未取得']); renderList('candles', current.candles||['未取得']); renderList('shards', current.shards||['未取得']);
+  document.getElementById('breadInfo').textContent = (current.bread?.schedule||'毎時 00分 / 30分 ごろ')+'｜'+(current.bread?.note||'');
+  document.getElementById('meta').innerHTML = `最終更新：${escapeHtml(current.updatedAt||'不明')} / 参照：<a href="${current.source||'#'}" target="_blank">9bit</a>`;
+  dailyEdit.value=lines(current.daily).join('\n'); candlesEdit.value=lines(current.candles).join('\n'); shardsEdit.value=lines(current.shards).join('\n');
+}
+function toggleEdit(){document.body.classList.toggle('editing')}
+function saveManual(){current={...current,daily:dailyEdit.value.split('\n').filter(Boolean),candles:candlesEdit.value.split('\n').filter(Boolean),shards:shardsEdit.value.split('\n').filter(Boolean),updatedAt:'手動補正 '+new Date().toLocaleString('ja-JP')};localStorage.setItem('skyManualData',JSON.stringify(current));render();}
+function clearManual(){localStorage.removeItem('skyManualData');loadData(true)}
+function updateBread(){const now=new Date();const next=new Date(now);const m=now.getMinutes();if(m<30){next.setMinutes(30,0,0)}else{next.setHours(now.getHours()+1,0,0,0)}const diff=Math.max(0,next-now);const mm=String(Math.floor(diff/60000)).padStart(2,'0');const ss=String(Math.floor(diff/1000)%60).padStart(2,'0');breadTimer.textContent=`${mm}:${ss}`}
+loadData(); updateBread(); setInterval(updateBread,1000); setInterval(()=>loadData(),300000);
+</script>
+</body></html>

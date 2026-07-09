@@ -1,0 +1,13 @@
+{
+  "name": "sky-free-auto-tool",
+  "version": "6.0.0",
+  "private": true,
+  "scripts": {
+    "fetch": "node scripts/fetch-9bit.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {}
+}
