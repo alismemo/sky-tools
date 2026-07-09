@@ -1,19 +1,9 @@
 {
-  "updatedAt": "2026-07-10T03:33:26.590820+09:00",
-  "ok": false,
-  "errors": [
-    "daily: <urlopen error [Errno -3] Temporary failure in name resolution>",
-    "candle: <urlopen error [Errno -3] Temporary failure in name resolution>",
-    "shard: <urlopen error [Errno -3] Temporary failure in name resolution>"
-  ],
-  "daily": {},
-  "candle": {},
-  "shard": {},
-  "timers": {
-    "bakery": {
-      "label": "パン焼き",
-      "next": "2026-07-10T03:45:00+09:00",
-      "memo": "毎時 00 / 15 / 30 / 45 分目安。ゲーム内とズレる場合はアプリの手動補正を使用してください。"
-    }
-  }
+  "updatedAt": "未取得",
+  "source": "https://9-bit.jp/skygold/4920/",
+  "status": "not-run-yet",
+  "daily": { "period": "未取得", "area": "未取得", "quests": ["Actions の Update Sky Data を Run workflow してください"] },
+  "candle": { "period": "未取得", "area": "未取得", "count": "未取得", "locations": [] },
+  "shard": { "summary": "未取得", "locations": [], "times": [] },
+  "notes": ["初回はGitHub Actionsを手動実行してください"]
 }

@@ -1,29 +1,38 @@
-# Sky便利ツール 完全無料自動版 v8
+# Sky便利ツール 完全無料自動版 v9
 
 ## 使い方
 
-1. ZIPを解凍します。
-2. GitHub の `alismemo/sky-tools` を開きます。
-3. **Add file → Upload files** で中身を全部アップロードします。
-4. `.github` フォルダも必ず入れてください。
-5. **Commit changes** を押します。
-6. **Actions** を開きます。
-7. 左側に **Update Sky Data** が出たらクリックします。
-8. **Run workflow** を押します。
-9. 緑のチェックになれば成功です。
+1. このZIPを解凍
+2. GitHub の `alismemo/sky-tools` を開く
+3. `Add file` → `Upload files`
+4. 解凍した中身を全部アップロード
+5. **`.github` フォルダも必ずアップロード**
+6. `Commit changes`
+7. `Actions` を開く
+8. 左側に **Update Sky Data** が出る
+9. **Run workflow** を押す
 
 ## URL
 
 通常版:
+
 `https://alismemo.github.io/sky-tools/`
 
 OBS版:
+
 `https://alismemo.github.io/sky-tools/overlay.html`
+
+## `.github` が見えない場合
+
+Windowsで隠しファイルが非表示だと見えないことがあります。
+エクスプローラー上部の「表示」→「隠しファイル」にチェックを入れてください。
 
 ## 自動更新
 
-GitHub Actions が毎日 JST 16:10 / 17:10 / 20:10 に9bitを確認し、`data/sky.json` を更新します。
+GitHub Actions が毎日 16時台以降に複数回実行し、`data/sky.json` を更新します。
+手動更新したい時は Actions → Update Sky Data → Run workflow。
 
-## 注意
+## 参照元
 
-9bit側のページ構造が大きく変わると取得に失敗する場合があります。その場合でもWebアプリの「手動補正」で表示できます。
+9bit Sky攻略ページをGitHub Actions側で取得してJSON化します。
+ブラウザから直接取得しないため、CORSで止まりません。
