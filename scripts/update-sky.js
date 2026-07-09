@@ -1,5 +1,6 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import * as cheerio from 'cheerio';
 
 const URLS = {
   daily: 'https://9-bit.jp/skygold/6593/',
@@ -7,160 +8,152 @@ const URLS = {
   shards: 'https://9-bit.jp/skygold/23767/'
 };
 
-function decodeEntities(s) {
-  return String(s || '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+const breadTimes = ['01:35','03:35','05:35','07:35','09:35','11:35','13:35','15:35','17:35','19:35','21:35','23:35'];
+const geyserTimes = ['00:05','02:05','04:05','06:05','08:05','10:05','12:05','14:05','16:05','18:05','20:05','22:05'];
+const turtleTimes = ['00:50','02:50','04:50','06:50','08:50','10:50','12:50','14:50','16:50','18:50','20:50','22:50'];
+
+function jstNow() {
+  const d = new Date();
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).format(d).replaceAll('/', '-');
 }
 
-function htmlToLines(html) {
-  let t = html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>|<\/div>|<\/h[1-6]>|<\/tr>|<\/li>|<\/td>|<\/th>/gi, '\n')
-    .replace(/<img[^>]*alt=["']([^"']*)["'][^>]*>/gi, '\n$1\n')
-    .replace(/<[^>]+>/g, '\n');
-  t = decodeEntities(t);
-  return t.split(/\n+/).map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
+async function fetchHtml(url) {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (GitHub Actions; Sky tools) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+      'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
+    }
+  });
+  if (!res.ok) throw new Error(`${url} ${res.status} ${res.statusText}`);
+  return await res.text();
 }
 
-function findLine(lines, re) {
-  const line = lines.find(l => re.test(l));
-  return line || '';
+function linesFromHtml(html) {
+  const $ = cheerio.load(html);
+  $('script, style, noscript, iframe, form, .comments, #comments').remove();
+  const text = $('article').text() || $('body').text();
+  return text
+    .replace(/\u00a0/g, ' ')
+    .split(/\n+/)
+    .map(s => s.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 }
 
-function afterLabelValue(lines, labelRe, maxAhead = 3) {
-  const i = lines.findIndex(l => labelRe.test(l));
-  if (i < 0) return '';
-  const same = lines[i].replace(labelRe, '').trim();
-  if (same) return same;
-  for (let j = i + 1; j <= Math.min(lines.length - 1, i + maxAhead); j++) {
-    const v = lines[j].trim();
-    if (v && !/^(Image|画像|▲)$/.test(v)) return v;
+function findValue(lines, label) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === label && lines[i + 1]) return lines[i + 1];
+    if (line.startsWith(label)) return line.slice(label.length).trim();
   }
   return '';
 }
 
-async function fetchText(url) {
-  const res = await fetch(url, {
-    headers: {
-      'user-agent': 'Mozilla/5.0 SkyToolsBot/1.0 (+https://github.com/alismemo/sky-tools)'
-    }
-  });
-  if (!res.ok) throw new Error(`${url} HTTP ${res.status}`);
-  return await res.text();
+function sliceBetween(lines, startPattern, endPatterns) {
+  const start = lines.findIndex(l => startPattern.test(l));
+  if (start < 0) return [];
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (endPatterns.some(p => p.test(lines[i]))) { end = i; break; }
+  }
+  return lines.slice(start + 1, end);
 }
 
-function parseDaily(html) {
-  const lines = htmlToLines(html);
-  const area = afterLabelValue(lines, /^主な対象エリア\s*/);
-  const start = afterLabelValue(lines, /^開始時間\s*/);
-  const end = afterLabelValue(lines, /^終了時間\s*/);
-  const idx = lines.findIndex(l => l.replace(/\s/g, '').includes('デイリークエスト一覧'));
-  const quests = [];
-  if (idx >= 0) {
-    for (let i = idx + 1; i < Math.min(lines.length, idx + 40); i++) {
-      const l = lines[i];
-      if (/関連情報|デイリークエストとは/.test(l)) break;
-      if (/Image|アイコン|今日の|一覧|デイリークエスト$|^\d+$/.test(l)) continue;
-      if (l.length >= 5 && !quests.includes(l)) quests.push(l);
-      if (quests.length >= 4) break;
-    }
-  }
-  return { area: area || '未取得', start, end, quests: quests.length ? quests : ['取得できませんでした'] };
+function cleanItem(s) {
+  return s
+    .replace(/^▲\s*/, '')
+    .replace(/^・\s*/, '')
+    .replace(/^[0-9０-９]+[.)．、]\s*/, '')
+    .trim();
 }
 
-function parseCandles(html) {
-  const lines = htmlToLines(html);
-  const period = afterLabelValue(lines, /^期間\s*/);
-  const area = afterLabelValue(lines, /^エリア\s*/);
-  const count = afterLabelValue(lines, /^個数\s*/);
-  const idx = lines.findIndex(l => l.includes('今日のデイリー大キャンドルの場所'));
-  const locations = [];
-  if (idx >= 0) {
-    for (let i = idx + 1; i < Math.min(lines.length, idx + 60); i++) {
-      const l = lines[i];
-      if (/関連情報|おすすめ記事|日替わり大キャンドルとは/.test(l)) break;
-      if (/^▲/.test(l)) locations.push(l.replace(/^▲\s*/, '').trim());
-    }
-  }
-  return { period, area: area || '未取得', count: count || '', locations: locations.length ? locations : ['取得できませんでした'] };
+function unique(arr) {
+  return [...new Set(arr.map(cleanItem).filter(Boolean))];
 }
 
-function parseShards(html) {
-  const lines = htmlToLines(html);
-  const idx = lines.findIndex(l => l.includes('場所と報酬'));
-  let location = '', type = '', reward = '';
-  if (idx >= 0) {
-    const block = lines.slice(idx, idx + 20);
-    const locLine = block.find(l => /^場所\s*/.test(l));
-    if (locLine) location = locLine.replace(/^場所\s*/, '').trim();
-    else location = afterLabelValue(lines, /^場所\s*/);
-    type = afterLabelValue(lines, /^種類\s*/);
-    reward = afterLabelValue(lines, /^報酬\s*/);
-  }
-  const timeIdx = lines.findIndex(l => l.includes('落ちる時間'));
-  const times = [];
-  if (timeIdx >= 0) {
-    for (let i = timeIdx + 1; i < Math.min(lines.length, timeIdx + 25); i++) {
-      const l = lines[i];
-      if (/関連情報|闇の破片カレンダー/.test(l)) break;
-      const m = l.match(/(\d+回目\s*)?\d{1,2}:\d{2}\s*[～〜-]\s*\d{1,2}:\d{2}/);
-      if (m) times.push(l.trim());
-    }
-  }
-  return { location: location || '未取得', type: type || '未取得', reward: reward || '', times };
+function parseDaily(lines) {
+  const area = findValue(lines, '主な対象エリア') || findValue(lines, '対象エリア') || '未取得';
+  const start = findValue(lines, '開始時間');
+  const end = findValue(lines, '終了時間');
+  const section = sliceBetween(lines, /デイリークエスト.*覧/, [/関連情報/, /デイリークエストとは/, /おすすめ記事/]);
+  const quests = unique(section.filter(l =>
+    !/デイリークエスト|Image|一覧|攻略|開始時間|終了時間|主な対象エリア/.test(l) &&
+    l.length >= 4 && l.length <= 80
+  )).slice(0, 4);
+  return { area, start, end, quests: quests.length ? quests : ['取得できませんでした'] };
 }
 
-function makeEveryTwoHours(minute) {
-  const arr = [];
-  for (let h = 0; h < 24; h += 2) arr.push(String(h).padStart(2, '0') + ':' + String(minute).padStart(2, '0'));
-  return arr;
+function parseCandles(lines) {
+  const period = findValue(lines, '期間');
+  const area = findValue(lines, 'エリア') || '未取得';
+  const count = findValue(lines, '個数') || '';
+  const section = sliceBetween(lines, /今日のデイリー大キャンドルの場所/, [/関連情報/, /日替わり大キャンドルとは/, /おすすめ記事/]);
+  const locations = unique(section.filter(l =>
+    (l.includes('▲') || /エリア|広場|神殿|入口|出口|洞窟|塔|祠|船|階|岩|左|右|手前|奥|上|下/.test(l)) &&
+    !/Image|今日の|場所$|関連情報|一覧/.test(l) &&
+    l.length >= 3 && l.length <= 90
+  )).slice(0, 8);
+  return { period, area, count, locations: locations.length ? locations : ['取得できませんでした'] };
+}
+
+function parseShards(lines) {
+  const section = sliceBetween(lines, /今日.*闇の破片|闇の破片.*今日|本日.*闇の破片/, [/関連情報/, /闇の破片とは/, /おすすめ記事/, /コメント/]);
+  const target = section.length ? section : lines.slice(0, 120);
+  const joined = target.join(' / ');
+  const location = findValue(target, '場所') || findValue(target, 'エリア') ||
+    (joined.match(/(?:場所|エリア)\s*[:：]?\s*([^/]{2,30})/)?.[1]?.trim() || '未取得');
+  const type = joined.includes('赤') ? '赤' : joined.includes('黒') ? '黒' : '未取得';
+  const times = unique((joined.match(/\d{1,2}\s*時\s*\d{0,2}\s*分?/g) || [])
+    .map(t => t.replace(/\s+/g, '').replace('時', ':').replace(/分$/, '')));
+  const notes = unique(target.filter(l => /▲|場所|時間|赤|黒|破片|星のキャンドル|通常キャンドル/.test(l) && l.length <= 100)).slice(0, 6);
+  return { location, type, times, notes };
 }
 
 async function main() {
   const errors = [];
-  let daily = { area: '未取得', quests: ['取得できませんでした'] };
-  let bigCandles = { area: '未取得', locations: ['取得できませんでした'] };
+  let daily = { area: '未取得', quests: [] };
+  let bigCandles = { area: '未取得', locations: [] };
   let shards = { location: '未取得', type: '未取得', times: [] };
 
-  try { daily = parseDaily(await fetchText(URLS.daily)); } catch (e) { errors.push('daily: ' + e.message); }
-  try { bigCandles = parseCandles(await fetchText(URLS.candles)); } catch (e) { errors.push('candles: ' + e.message); }
-  try { shards = parseShards(await fetchText(URLS.shards)); } catch (e) { errors.push('shards: ' + e.message); }
+  try { daily = parseDaily(linesFromHtml(await fetchHtml(URLS.daily))); } catch (e) { errors.push(`daily: ${e.message}`); }
+  try { bigCandles = parseCandles(linesFromHtml(await fetchHtml(URLS.candles))); } catch (e) { errors.push(`candles: ${e.message}`); }
+  try { shards = parseShards(linesFromHtml(await fetchHtml(URLS.shards))); } catch (e) { errors.push(`shards: ${e.message}`); }
 
-  const now = new Date();
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const updatedAtJst = jst.toISOString().replace('T', ' ').slice(0, 19) + ' JST';
+  const ok = daily.quests?.length && !daily.quests[0].includes('取得できません')
+    || bigCandles.locations?.length && !bigCandles.locations[0].includes('取得できません')
+    || shards.location !== '未取得';
 
   const data = {
-    status: errors.length >= 3 ? 'error' : 'ok',
+    status: ok ? 'ok' : 'error',
     source: URLS,
-    updatedAt: now.toISOString(),
-    updatedAtJst,
+    updatedAtJst: jstNow(),
     daily,
     bigCandles,
     shards,
-    timers: {
-      bread: makeEveryTwoHours(35).map((t, i) => String((i*2+1)%24).padStart(2,'0') + ':35'),
-      geyser: makeEveryTwoHours(5),
-      turtle: makeEveryTwoHours(50)
-    },
-    notes: errors.length ? errors : ['9bitから自動取得しました']
+    timers: { bread: breadTimes, geyser: geyserTimes, turtle: turtleTimes },
+    errors
   };
 
-  fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true });
-  fs.writeFileSync(path.join(process.cwd(), 'data', 'sky.json'), JSON.stringify(data, null, 2), 'utf8');
-  fs.writeFileSync(path.join(process.cwd(), 'data', 'latest.txt'), updatedAtJst, 'utf8');
+  await fs.mkdir('data', { recursive: true });
+  await fs.writeFile('data/sky.json', JSON.stringify(data, null, 2), 'utf8');
+  await fs.writeFile('data/latest.txt', `${data.updatedAtJst} status=${data.status}\n`, 'utf8');
   console.log(JSON.stringify(data, null, 2));
 }
 
-main().catch(err => {
+main().catch(async err => {
+  await fs.mkdir('data', { recursive: true });
+  const data = {
+    status: 'error',
+    updatedAtJst: jstNow(),
+    daily: { area: '未取得', quests: ['取得中にエラーが発生しました'] },
+    bigCandles: { area: '未取得', locations: ['取得中にエラーが発生しました'] },
+    shards: { location: '未取得', type: '未取得', times: [] },
+    timers: { bread: breadTimes, geyser: geyserTimes, turtle: turtleTimes },
+    errors: [err.stack || err.message]
+  };
+  await fs.writeFile('data/sky.json', JSON.stringify(data, null, 2), 'utf8');
   console.error(err);
-  process.exit(1);
+  process.exit(0);
 });

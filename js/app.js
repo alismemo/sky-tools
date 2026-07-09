@@ -1,8 +1,16 @@
-let skyData=null;
-const $=id=>document.getElementById(id);
-function setList(id,items){const el=$(id); if(!el)return; el.innerHTML=''; (items||[]).forEach(x=>{const li=document.createElement('li');li.textContent=x;el.appendChild(li);});}
-function nextCountdown(times){const now=new Date(); const today=now.toISOString().slice(0,10); let best=null; for(const t of times||[]){let d=new Date(`${today}T${t}:00+09:00`); if(d<=now)d=new Date(d.getTime()+86400000); if(!best||d<best)best=d;} if(!best)return'--:--:--'; const ms=best-now; const h=String(Math.floor(ms/3600000)).padStart(2,'0'); const m=String(Math.floor(ms%3600000/60000)).padStart(2,'0'); const s=String(Math.floor(ms%60000/1000)).padStart(2,'0'); return `${h}:${m}:${s}`;}
-function render(d){skyData=d; if($('updated'))$('updated').textContent=`更新: ${d.updatedAtJst||'未取得'} / ${d.status||''}`; if($('dailyArea'))$('dailyArea').textContent=`対象: ${d.daily?.area||'未取得'}`; setList('daily',d.daily?.quests||[]); if($('candleArea'))$('candleArea').textContent=`${d.bigCandles?.area||'未取得'} ${d.bigCandles?.count||''}`; setList('candles',d.bigCandles?.locations||[]); if($('shardInfo'))$('shardInfo').textContent=`${d.shards?.location||'未取得'} ${d.shards?.type||''}`; setList('shards',d.shards?.times||[]); tick();}
-function tick(){if(!skyData)return; if($('breadTimer'))$('breadTimer').textContent=nextCountdown(skyData.timers?.bread); if($('geyserTimer'))$('geyserTimer').textContent=nextCountdown(skyData.timers?.geyser); if($('turtleTimer'))$('turtleTimer').textContent=nextCountdown(skyData.timers?.turtle);}
-fetch('data/sky.json?ts='+Date.now()).then(r=>r.json()).then(render).catch(e=>{if($('updated'))$('updated').textContent='data/sky.jsonを読めません'; console.error(e);});
-setInterval(tick,1000); setInterval(()=>fetch('data/sky.json?ts='+Date.now()).then(r=>r.json()).then(render).catch(()=>{}),300000);
+const DATA_URL = './data/sky.json?ts=' + Date.now();
+const $ = (id) => document.getElementById(id);
+function setText(id, v){ const el=$(id); if(el) el.textContent = v || '未取得'; }
+function list(id, arr){ const el=$(id); if(!el) return; el.innerHTML=''; (arr&&arr.length?arr:['未取得']).forEach(x=>{const li=document.createElement('li');li.textContent=x;el.appendChild(li);}); }
+function nextTime(times){ const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes(); let best=null; for(const t of times||[]){const [h,m]=t.split(':').map(Number); let min=h*60+m; let diff=min-nowMin; if(diff<=0) diff+=1440; if(best===null||diff<best.diff) best={t,diff};} return best; }
+function renderTimer(id,times){ const n=nextTime(times); if(!n){setText(id,'--:--');return;} setText(id,`${n.t} まで ${Math.floor(n.diff/60)}時間${n.diff%60}分`); }
+async function load(){
+ try{ const data=await fetch(DATA_URL).then(r=>r.json());
+  setText('status', data.status); setText('updated', data.updatedAtJst);
+  setText('dailyArea', data.daily?.area); list('dailyList', data.daily?.quests);
+  setText('candleArea', data.bigCandles?.area); setText('candlePeriod', data.bigCandles?.period); list('candleList', data.bigCandles?.locations);
+  setText('shardLocation', data.shards?.location); setText('shardType', data.shards?.type); list('shardNotes', [...(data.shards?.times||[]), ...(data.shards?.notes||[])]);
+  renderTimer('breadTimer', data.timers?.bread); renderTimer('geyserTimer', data.timers?.geyser); renderTimer('turtleTimer', data.timers?.turtle);
+ }catch(e){ setText('status','読み込み失敗'); console.error(e); }
+}
+load(); setInterval(load, 60000);
