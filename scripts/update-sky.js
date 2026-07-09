@@ -1,135 +1,105 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import * as cheerio from 'cheerio';
-import { decode } from 'html-entities';
 
-const URL = 'https://9-bit.jp/skygold/4920/';
-const ROOT = process.cwd();
-const DATA_DIR = path.join(ROOT, 'data');
-const OUT = path.join(DATA_DIR, 'sky.json');
-const DEBUG = path.join(DATA_DIR, 'debug-9bit.txt');
+const SOURCES = {
+  daily: 'https://9-bit.jp/skygold/6593',
+  candles: 'https://9-bit.jp/skygold/4920/',
+  shards: 'https://9-bit.jp/skygold/23767/'
+};
 
-const now = new Date();
-const jstDate = new Intl.DateTimeFormat('ja-JP', {
-  timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
-  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-}).format(now);
-
-function clean(s = '') {
-  return decode(String(s))
-    .replace(/\u00a0/g, ' ')
-    .replace(/[\t\r]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ ]{2,}/g, ' ')
+function clean(s='') {
+  return s.replace(/<script[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style[\s\S]*?<\/style>/gi,' ')
+    .replace(/<[^>]+>/g,' ')
+    .replace(/&nbsp;/g,' ')
+    .replace(/&amp;/g,'&')
+    .replace(/&#8211;|&ndash;/g,'-')
+    .replace(/\s+/g,' ')
     .trim();
 }
-
-function uniq(list) {
-  const out = [];
-  const seen = new Set();
-  for (const item of list.map(clean).filter(Boolean)) {
-    const key = item.replace(/\s/g, '');
-    if (!seen.has(key)) { seen.add(key); out.push(item); }
-  }
-  return out;
+function pick(text, start, end) {
+  const a = text.indexOf(start);
+  if (a < 0) return '';
+  const b = text.indexOf(end, a + start.length);
+  return text.slice(a, b > a ? b : a + 1800);
 }
-
-function splitLines(text) {
-  return uniq(clean(text).split(/\n|。|・|●|◆|■|★|\|/).map(clean).filter(v => v.length >= 2));
+function linesFrom(block) {
+  return block.split(/(?=▲|\d回目|場所 |種類 |報酬 |開始時間 |終了時間 |主な対象エリア |期間 |エリア |個数 )/)
+    .map(s=>s.trim()).filter(Boolean);
 }
-
-function sectionByKeywords($, keywords, maxChars = 1200) {
-  const blocks = [];
-  $('h1,h2,h3,h4,p,li,table,div').each((_, el) => {
-    const t = clean($(el).text());
-    if (!t || t.length < 2) return;
-    if (keywords.some(k => t.includes(k))) {
-      let block = t;
-      let next = $(el).next();
-      for (let i = 0; i < 8 && next.length; i++, next = next.next()) {
-        const nt = clean(next.text());
-        if (nt) block += '\n' + nt;
-        if (block.length > maxChars) break;
-      }
-      blocks.push(block.slice(0, maxChars));
+async function get(url) {
+  const res = await fetch(url, {headers:{'user-agent':'Mozilla/5.0 sky-tools GitHubActions'}});
+  if (!res.ok) throw new Error(`${url} ${res.status}`);
+  return await res.text();
+}
+function parseDaily(html) {
+  const text = clean(html);
+  const block = pick(text, '今日（', '関連情報');
+  const area = (block.match(/主な対象エリア\s+(.+?)\s+デイリークエスト/)||[])[1] || '';
+  const start = (block.match(/開始時間\s+(.+?)\s+終了時間/)||[])[1] || '';
+  const end = (block.match(/終了時間\s+(.+?)\s+主な対象エリア/)||[])[1] || '';
+  const listPart = (block.match(/デイリークエスト一 覧\s+(.+)/)||[])[1] || block;
+  const quests = listPart.split(/(?=\S+に呼びかける|(?=\S+で精霊)|(?=\S+で彷徨う)|(?=\S+に.*会いましょう)|(?=\S+で瞑想)|(?=\S+を捕まえる)|(?=\S+人の)/)
+    .map(s=>s.replace(/^Image:[^　\s]+\s*/,'').trim())
+    .filter(s=>s && !s.includes('関連情報'))
+    .slice(0,4);
+  // fallback: take link-like sentences between list and related
+  let finalQuests = quests;
+  if (finalQuests.length < 4) {
+    const m = block.match(/デイリークエスト一 覧\s+(.+?)\s+関連情報/);
+    if (m) {
+      finalQuests = m[1].replace(/Image:[^\s]+/g,'').split(/\s{2,}|(?<=る)\s+(?=\S)|(?<=す)\s+(?=\S)/).map(x=>x.trim()).filter(Boolean).slice(0,4);
     }
-  });
-  return uniq(blocks);
-}
-
-function extractListFromSections(sections, fallbackText, keywords) {
-  const joined = sections.join('\n');
-  let lines = splitLines(joined);
-  lines = lines.filter(line => {
-    if (line.length > 140) return false;
-    if (/関連記事|コメント|スポンサー|広告|Twitter|LINE|©|目次/.test(line)) return false;
-    return true;
-  });
-  if (lines.length === 0) {
-    const idx = keywords.map(k => fallbackText.indexOf(k)).filter(i => i >= 0).sort((a,b)=>a-b)[0];
-    if (idx >= 0) lines = splitLines(fallbackText.slice(idx, idx + 1200));
   }
-  return uniq(lines).slice(0, 12);
+  return { area, start, end, quests: finalQuests };
 }
-
+function parseCandles(html) {
+  const text = clean(html);
+  const block = pick(text, '今日のデイリー大キャンドル（', '関連情報');
+  const period = (block.match(/期間\s+(.+?)\s+エリア/)||[])[1] || '';
+  const area = (block.match(/エリア\s+(.+?)\s+個数/)||[])[1] || '';
+  const count = (block.match(/個数\s+(.+?)\s+大キャンドル/)||[])[1] || '';
+  const placePart = (block.match(/今日のデイリー大キャンドルの場所\s+(.+)/)||[])[1] || '';
+  const locations = [...placePart.matchAll(/▲\s*([^▲]+)/g)].map(m=>m[1].trim()).filter(Boolean).slice(0,6);
+  return { period, area, count, locations };
+}
+function parseShards(html) {
+  const text = clean(html);
+  const block = pick(text, '今日の闇の破片（', '関連情報');
+  const period = (block.match(/▼\s*(.+?)\s*▼/)||[])[1] || '';
+  const location = (block.match(/場所\s+(.+?)\s+種類/)||[])[1] || '';
+  const type = (block.match(/種類\s+(.+?)\s+報酬/)||[])[1] || '';
+  const reward = (block.match(/報酬\s+(.+?)\s+今日の/)||[])[1] || '';
+  const times = [...block.matchAll(/\d回目\s+([0-9:～〜]+(?:\s*[0-9:～〜]+)?)/g)].map(m=>m[0].trim()).slice(0,3);
+  return { period, location, type, reward, times };
+}
+function breadSchedule() {
+  // Skyのパン焼き/おばあちゃんは2時間ごと（JST）。表示用の固定時刻。
+  return ['01:35','03:35','05:35','07:35','09:35','11:35','13:35','15:35','17:35','19:35','21:35','23:35'];
+}
 async function main() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const res = await fetch(URL, {
-    headers: {
-      'user-agent': 'Mozilla/5.0 sky-tools GitHub Actions',
-      'accept': 'text/html,application/xhtml+xml'
-    }
-  });
-  if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
-  const html = await res.text();
-  const $ = cheerio.load(html);
-  $('script,style,noscript,iframe').remove();
-  const title = clean($('title').first().text());
-  const bodyText = clean($('body').text());
-
-  const dailySections = sectionByKeywords($, ['デイリー', 'クエスト', '今日の任務', '日替わりクエスト']);
-  const candleSections = sectionByKeywords($, ['大キャンドル', 'キャンドルのかたまり', 'キャンドル']);
-  const shardSections = sectionByKeywords($, ['闇の破片', '闇のかけら', '破片', '赤石', '黒石']);
-
+  const [dailyHtml, candlesHtml, shardsHtml] = await Promise.all([
+    get(SOURCES.daily), get(SOURCES.candles), get(SOURCES.shards)
+  ]);
+  const now = new Date();
   const data = {
-    source: URL,
-    title,
+    source: SOURCES,
     updatedAt: now.toISOString(),
-    updatedAtJst: jstDate,
+    updatedAtJst: now.toLocaleString('ja-JP', {timeZone:'Asia/Tokyo'}),
     status: 'ok',
-    daily: extractListFromSections(dailySections, bodyText, ['デイリー', 'クエスト']),
-    bigCandles: extractListFromSections(candleSections, bodyText, ['大キャンドル', 'キャンドルのかたまり']),
-    shards: extractListFromSections(shardSections, bodyText, ['闇の破片', '闇のかけら', '破片']),
-    notes: [
-      '9bitのページ構造が変わった場合、抽出結果がずれることがあります。',
-      'おかしい場合はdata/debug-9bit.txtを確認してください。'
-    ]
+    daily: parseDaily(dailyHtml),
+    bigCandles: parseCandles(candlesHtml),
+    shards: parseShards(shardsHtml),
+    timers: { bread: breadSchedule() },
+    notes: ['9bitからGitHub Actionsで取得しました']
   };
-
-  await fs.writeFile(OUT, JSON.stringify(data, null, 2), 'utf8');
-  await fs.writeFile(DEBUG, [
-    `URL: ${URL}`,
-    `Fetched: ${data.updatedAtJst}`,
-    `Title: ${title}`,
-    '',
-    '--- daily sections ---', dailySections.join('\n---\n'),
-    '', '--- candle sections ---', candleSections.join('\n---\n'),
-    '', '--- shard sections ---', shardSections.join('\n---\n')
-  ].join('\n'), 'utf8');
-  console.log('Wrote data/sky.json');
+  await fs.mkdir('data', {recursive:true});
+  await fs.writeFile('data/sky.json', JSON.stringify(data, null, 2), 'utf8');
+  await fs.writeFile('data/latest.txt', `updated ${data.updatedAtJst}\n`, 'utf8');
+  console.log(JSON.stringify(data, null, 2));
 }
-
-main().catch(async err => {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const fallback = {
-    source: URL,
-    updatedAt: now.toISOString(),
-    updatedAtJst: jstDate,
-    status: 'error',
-    error: String(err?.message || err),
-    daily: [], bigCandles: [], shards: [], notes: ['取得に失敗しました。Actionsのログを確認してください。']
-  };
-  await fs.writeFile(OUT, JSON.stringify(fallback, null, 2), 'utf8');
+main().catch(async (err)=>{
   console.error(err);
+  await fs.mkdir('data', {recursive:true});
+  await fs.writeFile('data/sky.json', JSON.stringify({status:'error', error:String(err), updatedAt:new Date().toISOString()}, null, 2));
   process.exit(1);
 });

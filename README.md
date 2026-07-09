@@ -1,11 +1,15 @@
-# Sky便利ツール Step2
+# Sky便利ツール Step3 実取得版
 
-## 追加されたもの
-- GitHub Actionsで9bitを取得
-- `data/sky.json`を自動更新
-- Web/OBSがJSONを表示
+## 使い方
+1. このZIPを解凍
+2. 中身を全部 `alismemo/sky-tools` に上書きアップロード
+3. Actions → Update Sky Data → Run workflow
+4. 成功後、Code → data/sky.json を開く
+5. `status: ok` になっていれば成功
 
-## 実行方法
-1. このZIPの中身をGitHubに上書きアップロード
-2. Actions → Update Sky Data → Run workflow
-3. 成功したら Code → data/sky.json を確認
+## URL
+通常版: https://alismemo.github.io/sky-tools/
+OBS版: https://alismemo.github.io/sky-tools/overlay.html
+
+## 注意
+9bitのHTML構造が変わると取得内容が崩れることがあります。その場合は scripts/update-sky.js を調整します。

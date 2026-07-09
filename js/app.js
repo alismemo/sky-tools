@@ -1,27 +1,47 @@
+const $ = (id)=>document.getElementById(id);
+let skyData = null;
 async function loadSky(){
-  const res = await fetch('data/sky.json?ts=' + Date.now());
-  const data = await res.json();
-  document.getElementById('updated').textContent = `更新: ${data.updatedAtJst || '未取得'} / 状態: ${data.status || 'unknown'}`;
-  setList('daily', data.daily);
-  setList('candles', data.bigCandles);
-  setList('shards', data.shards);
+  try{
+    const res = await fetch('data/sky.json?ts='+Date.now());
+    skyData = await res.json();
+    render(skyData);
+  }catch(e){
+    document.body.insertAdjacentHTML('afterbegin','<div class="wrap"><div class="card warn">data/sky.jsonを読めませんでした。Actionsを実行してください。</div></div>');
+  }
 }
-function setList(id, arr){
-  const ul = document.getElementById(id); ul.innerHTML='';
-  (arr && arr.length ? arr : ['データなし']).forEach(v=>{ const li=document.createElement('li'); li.textContent=v; ul.appendChild(li); });
+function arr(a){return Array.isArray(a)?a:[]}
+function li(list){return arr(list).map(x=>`<div class="item">${escapeHtml(String(x))}</div>`).join('')||'<div class="muted">未取得</div>'}
+function escapeHtml(s){return s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
+function render(d){
+  $('updated').textContent = d.updatedAtJst || d.updatedAt || '未取得';
+  $('status').textContent = d.status || 'unknown';
+  $('status').className = d.status === 'ok' ? 'ok' : 'warn';
+  const daily=d.daily||{};
+  $('dailyMeta').innerHTML = `<span class="pill">エリア ${escapeHtml(daily.area||'未取得')}</span><span class="pill">${escapeHtml(daily.start||'')}</span><span class="pill">${escapeHtml(daily.end||'')}</span>`;
+  $('dailyList').innerHTML = li(daily.quests);
+  const c=d.bigCandles||{};
+  $('candleMeta').innerHTML = `<span class="pill">${escapeHtml(c.area||'未取得')}</span><span class="pill">${escapeHtml(c.count||'')}</span><span class="pill">${escapeHtml(c.period||'')}</span>`;
+  $('candleList').innerHTML = li(c.locations);
+  const s=d.shards||{};
+  $('shardMeta').innerHTML = `<span class="pill">${escapeHtml(s.type||'未取得')}</span><span class="pill">${escapeHtml(s.reward||'')}</span><span class="pill">${escapeHtml(s.period||'')}</span>`;
+  $('shardPlace').textContent = s.location || '未取得';
+  $('shardTimes').innerHTML = li(s.times);
+  $('breadSchedule').innerHTML = arr(d.timers?.bread).map(t=>`<div class="timebox">${t}</div>`).join('');
+  updateTimer();
 }
-function nextBread(){
+function nextFromSchedule(times){
   const now = new Date();
-  const minutes = [35, 40, 45];
-  const candidates=[];
-  for(let h=-1; h<4; h++) for(const m of minutes){ const d=new Date(now); d.setHours(now.getHours()+h,m,0,0); if(d>now)candidates.push(d); }
-  candidates.sort((a,b)=>a-b); return candidates[0];
+  const today = new Date(now); today.setHours(0,0,0,0);
+  const candidates = times.map(t=>{const [h,m]=t.split(':').map(Number); const d=new Date(today); d.setHours(h,m,0,0); if(d<now)d.setDate(d.getDate()+1); return d;});
+  return candidates.sort((a,b)=>a-b)[0];
 }
-function tick(){
-  const n=nextBread(); const diff=Math.max(0,n-new Date());
-  const mm=String(Math.floor(diff/60000)).padStart(2,'0'); const ss=String(Math.floor(diff/1000)%60).padStart(2,'0');
-  document.getElementById('bread').textContent=`次のパン焼きまで ${mm}:${ss}`;
+function updateTimer(){
+  const times = skyData?.timers?.bread || [];
+  if(!times.length){$('breadNext').textContent='未取得';$('breadCountdown').textContent='--:--:--';return}
+  const next = nextFromSchedule(times);
+  const diff = Math.max(0,next-new Date());
+  const h = Math.floor(diff/3600000), m=Math.floor(diff%3600000/60000), s=Math.floor(diff%60000/1000);
+  $('breadNext').textContent = next.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+  $('breadCountdown').textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
-loadSky().catch(e=>{document.getElementById('updated').textContent='読み込み失敗: '+e.message;document.getElementById('updated').className='error'});
-setInterval(tick,1000); tick();
-setInterval(loadSky,5*60*1000);
+setInterval(updateTimer,1000);loadSky();
