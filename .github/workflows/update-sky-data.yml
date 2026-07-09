@@ -1,0 +1,10 @@
+name: Update Sky Data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Sky Actions OK"
