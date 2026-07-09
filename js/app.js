@@ -1,27 +1,8 @@
+let skyData=null;
 const $=id=>document.getElementById(id);
-let sky=null;
-async function loadData(){
-  try{const res=await fetch(`data/sky.json?ts=${Date.now()}`); sky=await res.json(); render();}
-  catch(e){console.error(e);}
-}
-function list(items){return (items||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('')||'<li>未取得</li>'}
-function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-function render(){
-  $('updated').textContent=`更新：${sky.updatedAtJst||'未取得'} / 状態：${sky.status||'unknown'}`;
-  $('dailyMeta').innerHTML=`<span class="badge">${escapeHtml(sky.daily?.area||'未取得')}</span><div class="meta">${escapeHtml(sky.daily?.start||'')} ${escapeHtml(sky.daily?.end?`〜 ${sky.daily.end}`:'')}</div>`;
-  $('dailyList').innerHTML=list(sky.daily?.quests);
-  $('candlesMeta').innerHTML=`<span class="badge">${escapeHtml(sky.bigCandles?.area||'未取得')}</span><div class="meta">${escapeHtml(sky.bigCandles?.period||'')} ${escapeHtml(sky.bigCandles?.count||'')}</div>`;
-  $('candlesList').innerHTML=list(sky.bigCandles?.locations);
-  $('shardsMeta').innerHTML=`<span class="badge">${escapeHtml(sky.shards?.location||'未取得')}</span><div class="meta">${escapeHtml(sky.shards?.period||'')} / ${escapeHtml(sky.shards?.type||'')} / ${escapeHtml(sky.shards?.reward||'')}</div>`;
-  $('shardsList').innerHTML=list(sky.shards?.times);
-  tick();
-}
-function nextFrom(times){
-  const now=new Date();
-  const cand=[];
-  for(const t of times||[]){const [h,m]=t.split(':').map(Number);const d=new Date(now);d.setHours(h,m,0,0); if(d<=now)d.setDate(d.getDate()+1); cand.push(d)}
-  cand.sort((a,b)=>a-b);return cand[0];
-}
-function fmt(ms){if(ms<0)ms=0;const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`}
-function tick(){if(!sky)return; for(const key of ['bread','geyser','turtle']){const n=nextFrom(sky.timers?.[key]);$(key+'Next').textContent=n?n.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}):'--:--';$(key+'Count').textContent=n?fmt(n-new Date()):'--:--:--';}}
-setInterval(tick,1000); loadData(); setInterval(loadData,300000);
+function setList(id,items){const el=$(id); if(!el)return; el.innerHTML=''; (items||[]).forEach(x=>{const li=document.createElement('li');li.textContent=x;el.appendChild(li);});}
+function nextCountdown(times){const now=new Date(); const today=now.toISOString().slice(0,10); let best=null; for(const t of times||[]){let d=new Date(`${today}T${t}:00+09:00`); if(d<=now)d=new Date(d.getTime()+86400000); if(!best||d<best)best=d;} if(!best)return'--:--:--'; const ms=best-now; const h=String(Math.floor(ms/3600000)).padStart(2,'0'); const m=String(Math.floor(ms%3600000/60000)).padStart(2,'0'); const s=String(Math.floor(ms%60000/1000)).padStart(2,'0'); return `${h}:${m}:${s}`;}
+function render(d){skyData=d; if($('updated'))$('updated').textContent=`更新: ${d.updatedAtJst||'未取得'} / ${d.status||''}`; if($('dailyArea'))$('dailyArea').textContent=`対象: ${d.daily?.area||'未取得'}`; setList('daily',d.daily?.quests||[]); if($('candleArea'))$('candleArea').textContent=`${d.bigCandles?.area||'未取得'} ${d.bigCandles?.count||''}`; setList('candles',d.bigCandles?.locations||[]); if($('shardInfo'))$('shardInfo').textContent=`${d.shards?.location||'未取得'} ${d.shards?.type||''}`; setList('shards',d.shards?.times||[]); tick();}
+function tick(){if(!skyData)return; if($('breadTimer'))$('breadTimer').textContent=nextCountdown(skyData.timers?.bread); if($('geyserTimer'))$('geyserTimer').textContent=nextCountdown(skyData.timers?.geyser); if($('turtleTimer'))$('turtleTimer').textContent=nextCountdown(skyData.timers?.turtle);}
+fetch('data/sky.json?ts='+Date.now()).then(r=>r.json()).then(render).catch(e=>{if($('updated'))$('updated').textContent='data/sky.jsonを読めません'; console.error(e);});
+setInterval(tick,1000); setInterval(()=>fetch('data/sky.json?ts='+Date.now()).then(r=>r.json()).then(render).catch(()=>{}),300000);
