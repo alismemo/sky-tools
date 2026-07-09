@@ -1,9 +1,14 @@
 {
-  "updatedAt": "未取得",
-  "source": "https://9-bit.jp/skygold/4920/",
-  "status": "not-run-yet",
-  "daily": { "period": "未取得", "area": "未取得", "quests": ["Actions の Update Sky Data を Run workflow してください"] },
-  "candle": { "period": "未取得", "area": "未取得", "count": "未取得", "locations": [] },
-  "shard": { "summary": "未取得", "locations": [], "times": [] },
-  "notes": ["初回はGitHub Actionsを手動実行してください"]
+  "updatedAt": "",
+  "updatedAtJST": "未更新",
+  "sources": {
+    "daily": "https://9-bit.jp/skygold/6593",
+    "candles": "https://9-bit.jp/skygold/4920/",
+    "shards": "https://9-bit.jp/skygold/23767/"
+  },
+  "daily": { "area": "未取得", "quests": [] },
+  "candles": { "area": "未取得", "locations": [] },
+  "shards": { "place": "未取得", "times": [] },
+  "bread": { "name": "パン焼き", "times": ["毎時00分ごろ", "毎時30分ごろ"] },
+  "errors": []
 }
